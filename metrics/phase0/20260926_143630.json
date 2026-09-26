@@ -1,0 +1,181 @@
+{
+  "run_id": "20260926_143630",
+  "pipeline_version": "0.1.0",
+  "timestamp": "2026-09-26T14:43:26.438552+00:00",
+  "timings_seconds": {
+    "test_test_source1.tsv": 49.62,
+    "test_test_source2.tsv": 190.8,
+    "test_test_source3.tsv": 175.05,
+    "total_test": 415.47,
+    "total_pipeline": 415.47
+  },
+  "source_files": {
+    "test_source1.tsv": {
+      "input_rows": 1732544,
+      "output_rows": 1732544,
+      "match": true
+    },
+    "test_source2.tsv": {
+      "input_rows": 4887273,
+      "output_rows": 4887273,
+      "match": true
+    },
+    "test_source3.tsv": {
+      "input_rows": 5082316,
+      "output_rows": 5082316,
+      "match": true
+    }
+  },
+  "partition_counts": {
+    "France": {
+      "Query": 259452,
+      "Target": 1434993
+    },
+    "India": {
+      "Query": 809986,
+      "Target": 4717565
+    },
+    "US": {
+      "Query": 663106,
+      "Target": 3817031
+    }
+  },
+  "cross_script_rate": {
+    "by_country": {
+      "France": 0.0,
+      "India": 0.15180375540632732,
+      "US": 0.0
+    },
+    "by_source": {
+      "S1": 0.0,
+      "S2": 0.10988827511784179,
+      "S3": 0.05943136947800963
+    }
+  },
+  "script_distribution": {
+    "France": {
+      "Latin": 1694445
+    },
+    "India": {
+      "Latin": 4688448,
+      "Telugu": 69675,
+      "Gujarati": 54031,
+      "Gurmukhi": 12105,
+      "Bengali": 54640,
+      "Malayalam": 34105,
+      "Devanagari": 473558,
+      "Kannada": 67686,
+      "Tamil": 59949,
+      "Oriya": 13354
+    },
+    "US": {
+      "Latin": 4480137
+    }
+  },
+  "has_address_rate": {
+    "by_country": {
+      "France": 0.9745769263682209,
+      "India": 0.9797371385628102,
+      "US": 0.9753525394424323
+    },
+    "by_source": {
+      "S1": 1.0,
+      "S2": 0.9735214300490274,
+      "S3": 0.9732212636915926
+    }
+  },
+  "transliteration_coverage": {
+    "Telugu": {
+      "attempted": 69675,
+      "handled": 69675,
+      "unhandled": 0,
+      "degenerate": 0
+    },
+    "Gujarati": {
+      "attempted": 54031,
+      "handled": 54031,
+      "unhandled": 0,
+      "degenerate": 0
+    },
+    "Gurmukhi": {
+      "attempted": 12105,
+      "handled": 12105,
+      "unhandled": 0,
+      "degenerate": 0
+    },
+    "Bengali": {
+      "attempted": 54640,
+      "handled": 54640,
+      "unhandled": 0,
+      "degenerate": 0
+    },
+    "Malayalam": {
+      "attempted": 34105,
+      "handled": 34105,
+      "unhandled": 0,
+      "degenerate": 0
+    },
+    "Devanagari": {
+      "attempted": 473558,
+      "handled": 473558,
+      "unhandled": 0,
+      "degenerate": 0
+    },
+    "Kannada": {
+      "attempted": 67686,
+      "handled": 67686,
+      "unhandled": 0,
+      "degenerate": 0
+    },
+    "Tamil": {
+      "attempted": 59949,
+      "handled": 59949,
+      "unhandled": 0,
+      "degenerate": 0
+    },
+    "Oriya": {
+      "attempted": 13354,
+      "handled": 13354,
+      "unhandled": 0,
+      "degenerate": 0
+    }
+  },
+  "length_percentiles": {
+    "France": {
+      "name": {
+        "P25": 15.0,
+        "P50": 19.0,
+        "P75": 24.0
+      },
+      "address": {
+        "P25": 36.0,
+        "P50": 44.0,
+        "P75": 51.0
+      }
+    },
+    "India": {
+      "name": {
+        "P25": 21.0,
+        "P50": 28.0,
+        "P75": 33.0
+      },
+      "address": {
+        "P25": 57.0,
+        "P50": 71.0,
+        "P75": 86.0
+      }
+    },
+    "US": {
+      "name": {
+        "P25": 17.0,
+        "P50": 23.0,
+        "P75": 29.0
+      },
+      "address": {
+        "P25": 29.0,
+        "P50": 33.0,
+        "P75": 37.0
+      }
+    }
+  }
+}
