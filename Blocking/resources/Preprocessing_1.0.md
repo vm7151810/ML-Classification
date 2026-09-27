@@ -1,4 +1,9 @@
-# Phase 0: Preprocessing & Partitioning v2.0 (Polars Engine)
+# Phase 0: Preprocessing & Partitioning v2.0 (Polars Engine) (PATCHED v2.1)
+
+> [!WARNING]
+> **ARCHITECTURAL OVERRIDES APPLIED**
+> The logic in this document has been bulletproofed. You MUST apply the following patches during implementation:
+> 1. **Tokenizer Index Pollution Defense:** The `to_char_3grams` tokenizer (used in BM25 indices downstream) must explicitly intercept `nulladdr` or `nullname` imputation flags and immediately return `[]`. This prevents garbage 3-grams from polluting the BM25 IDF mathematics.
 
 In Phase 0, our primary goal is to load the raw massive datasets (`train_source1.tsv`, etc.), handle multilingual text (Indic scripts) safely, aggressively clean and standardize the text into specialized representations for downstream FAISS and BM25 indices, and partition the datasets by country to prepare for the Phase 1 Blocking phase.
 

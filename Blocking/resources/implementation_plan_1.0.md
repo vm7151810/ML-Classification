@@ -40,8 +40,9 @@ Build a robust, scalable Python pipeline that resolves business entity records f
 ```text
 Amazon ML Challange/
 ├── src/
+│   ├── .env                          # Centralized hyperparameter & config tuning
 │   ├── main.py                       # CLI entry point (--mode train | infer)
-│   ├── config.py                     # All hyperparameters, paths, thresholds
+│   ├── config.py                     # Loads .env via python-dotenv -> typed Constants
 │   ├── data_layer/
 │   │   ├── loader.py                 # Polars TSV loader + null imputation
 │   │   └── cleaner.py                # Transliteration + dual representation normalization
@@ -221,9 +222,102 @@ Semantic models capture *meaning*, not structure. Addresses are structured codes
 
 ---
 
-## 8. The Cyclic DAG Orchestrator
+## 8. Project DAG & Cycle Breakdown
 
-### 8A. Global `seen_dict` — Design & Data Structure
+### 8A. High-Level Data Flow & Cycle Logic
+This flowchart illustrates the overarching v2.3 architecture, showing exactly what data is generated, where it is cached, and how the engines interact within the cycle.
+
+```mermaid
+graph TD
+    %% Global Data Stores
+    D1[("Target Database (S2 + S3)")]
+    D2[("Query Database (S1)")]
+    D3[("Seen Dict Cache (Global)")]
+    D4[("Output Files (3 TSVs)")]
+    
+    %% Core Engines
+    E1["1. Blocking Engine (3-Streams)"]
+    E2["2. Feature Extraction Engine"]
+    E3["3. ML Classification Engine (XGBoost)"]
+    
+    %% Flow
+    D2 -->|S1 Query| E1
+    D1 -->|Target Index Search| E1
+    D3 -.->|Blacklist Filter O(1)| E1
+    
+    E1 -->|Top <=60 Unseen Candidates| E2
+    E2 -->|26-Dim Feature Vectors| E3
+    E3 -->|Probabilities| R{Threshold Met?}
+    
+    R -->|Yes/No| D3
+    D3 -.->|Single Pass Write| D4
+    
+    %% Cycle Logic
+    R --> C{"Stop Metric Reached?<br>(total_seen >= 90 OR 0 New Matches in Cycle 3)"}
+    C -->|No: Increment Cycle| E1
+    C -->|Yes: Terminate Cycle| Next[Proceed to Next S1 Query]
+```
+
+### 8B. Detailed Execution Architecture
+This flowchart breaks down the internal mechanics of each engine and the exact stepwise logic of the DAG.
+
+```mermaid
+graph TD
+    %% Phase 0
+    A[Raw TSV Files] --> B(Phase 0: Multilingual Preprocessing & Partitioning)
+    B --> C{For Each Country C}
+    
+    %% Indices
+    C --> D[Target_C: Source 2 + Source 3]
+    C --> E[Query_C: Source 1]
+    D --> F1[Build FAISS-Name Semantic Index]
+    D --> G1[Build BM25-Name Lexical Index]
+    D --> G2[Build BM25-Addr Lexical Index]
+    
+    %% The Loop
+    E --> H{For Each Query Entity S1}
+    H --> I[init_entity in global seen_dict<br>cycle = 1, active = True]
+    I --> J{While active == True}
+    
+    %% Retrieval
+    J -->|Yes| K["Set k = 20 + total_seen"]
+    F1 -.-> K
+    G1 -.-> K
+    G2 -.-> K
+    K --> L[Retrieve Top-k from 3 Streams]
+    L --> M[Post-Filter: Remove IDs present in seen_dict]
+    M --> N[Union Combine & Priority Sort<br>Yields <= 60 Unseen Candidates]
+    
+    %% Evaluation
+    N --> O[Phase 3: Extract 26-Dim Features]
+    
+    %% Routing
+    O --> P{Mode == 'infer'?}
+    P -->|No| P2[Store in Train Buffer<br>Mark All Rejected in seen_dict]
+    
+    P -->|Yes| P1[Phase 4: XGBoost Classification]
+    P1 --> Q{XGBoost Probability > Threshold?}
+    Q -->|Yes| R[Mark Matched in seen_dict<br>Increment new_matches]
+    Q -->|No| S[Mark Rejected in seen_dict]
+    
+    %% Stopping Metric
+    P2 --> T
+    R --> T{"total_seen >= 90<br>OR (Cycle >= 3 AND New Matches == 0)?"}
+    S --> T
+    T -->|Yes| U[Set active = False]
+    T -->|No| V[cycle += 1, Loop Back]
+    
+    V --> J
+    U --> NextEntity[Proceed to Next S1]
+    
+    NextEntity --> H
+    
+    %% Output
+    H -.->|After all S1s processed| Write[write_all_outputs]
+    Write --> W[Output: matching_results.tsv<br>candidate_pairs.tsv<br>candidate_pairs_per_cycle.tsv]
+```
+
+### 8C. Global `seen_dict` — Design & Data Structure
 
 **`seen_list` (local per-entity list) has been replaced by `seen_dict` (global nested dictionary).** `seen_dict` is initialized once before the outer loop and never cleared — it is the single source of truth for all 3 output files.
 
@@ -237,7 +331,7 @@ seen_dict["S1-00001"] = {
 }
 ```
 
-### 8B. Dual Candidate Output Files
+### 8D. Dual Candidate Output Files
 
 | File | Rows per S1 Entity | Written When | Source in `seen_dict` |
 |---|---|---|---|
@@ -245,7 +339,7 @@ seen_dict["S1-00001"] = {
 | `candidate_pairs_per_cycle.tsv` | **One per cycle** | After ALL entities processed | `per_cycle[1]`, `per_cycle[2]`, ... |
 | `matching_results.tsv` | **Exactly 1** | After ALL entities processed | `accepted` only |
 
-### 8C. Full Orchestrator Pseudocode (3 Streams)
+### 8E. Full Orchestrator Pseudocode (3 Streams)
 
 ```python
 def run_orchestrator(mode, query_c, target_c,
@@ -319,30 +413,38 @@ def run_orchestrator(mode, query_c, target_c,
 
 ---
 
-## 9. Phase 3: Feature Engineering (18-Dim Vector)
+## 9. Phase 3: Feature Engineering (26-Dim Vector)
+
+> **Note:** Expanded from the original 18-dim spec to 26-dim in `Feature_Engineering_1.0.md v5.0`. See that document for full implementation rules (symmetric Monge-Elkan, `compute_bm25_self_score()` pseudocode, phonetic word-level hashing, etc.).
 
 | Dim | Feature | Method | Stream Source |
 |---|---|---|---|
-| 1 | Name Jaro-Winkler | `jellyfish.jaro_winkler_similarity` | — |
-| 2 | Name Monge-Elkan | `textdistance.MongeElkan` | — |
-| 3 | Name Levenshtein (normalized) | `jellyfish.levenshtein_distance / max_len` | — |
-| 4 | Name Phonetic Match | `pyphonetics` Double Metaphone binary flag | — |
-| 5 | Acronym Score | Jaro-Winkler(initials(longer), shorter) | — |
-| 6 | Name Semantic Cosine | MiniLM embedding dot product | FAISS-Name |
-| 7 | Exact Name Match | Binary flag | — |
-| 8 | Addr Token Jaccard | Word-level overlap | — |
-| 9 | Addr Numeric Jaccard | Extracted number set overlap | — |
-| 10 | Addr Numeric Exact | Binary: sets identical? | — |
-| 11 | **Name BM25 Score (normalized)** | `name_bm25_score / max_name_bm25_for_query` | BM25-Name |
-| 12 | **Addr BM25 Score (normalized)** | `addr_bm25_score / max_addr_bm25_for_query` | BM25-Addr |
-| 13 | Exact Address Match | Binary flag | — |
-| 14 | Name Length Ratio | `min(len_a, len_b) / max(len_a, len_b)` | — |
-| 15 | Addr Length Ratio | Same formula | — |
+| 1 | Name Jaro-Winkler Similarity | `jellyfish.jaro_winkler_similarity` | — |
+| 2 | Name Monge-Elkan Distance (Symmetric Avg) | `textdistance.MongeElkan` — average ME(A,B) and ME(B,A) | — |
+| 3 | Name Levenshtein Similarity | `1.0 - (jellyfish.levenshtein_distance / max_len)` | — |
+| 4 | Exact Name Match | Binary flag | — |
+| 5 | Name Phonetic Match (Word-Level Set Intersect) | `pyphonetics` Double Metaphone (primary code) per word → set intersect | — |
+| 6 | Acronym Score (Symmetric, Edge-Case Safe) | Jaro-Winkler(initials, other) — symmetric max | — |
+| 7 | Name Semantic Cosine | L2-normalized MiniLM embedding dot product (clamped `max(0, x)`) | FAISS-Name |
+| 8 | Addr Token Jaccard | `.split()` tokenize → `\|intersect\| / \|union\|` | BM25-Addr |
+| 9 | Addr Token Containment | `.split()` tokenize → `\|intersect\| / min(\|A\|, \|B\|)` | BM25-Addr |
+| 10 | Exact Address Match | Binary flag | — |
+| 11 | Addr Numeric Jaccard | `re.findall(r'\d+')` → set IoU (guard `0/0`) | — |
+| 12 | Addr Numeric Exact (Ternary: 1/0/-1) | Set comparison; -1 if no numbers in either | — |
+| 13 | Addr Numeric Exists Both | Binary: both address sets non-empty? | — |
+| 14 | **Name BM25 Score (Self-Normalized)** | `name_bm25_score / compute_bm25_self_score(query, index)` | BM25-Name |
+| 15 | **Addr BM25 Score (Self-Normalized)** | `addr_bm25_score / compute_bm25_self_score(query, index)` | BM25-Addr |
 | 16 | **RRF Score (3-stream)** | `1/(60+bm25_name_rank) + 1/(60+bm25_addr_rank) + 1/(60+faiss_rank)` | All 3 |
 | 17 | **Stream Overlap Count** | `0/1/2/3` — how many streams retrieved this candidate | All 3 |
-| Meta | **Cross-Script Target?** | `is_cross_script` binary flag from preprocessing | — |
-| Meta | Source Origin | One-hot: S2=0, S3=1 | — |
-| Meta | Country Target Encoded | Learned mean-encoding per country | — |
+| 18 | Name Length Ratio | `min(len_a, len_b) / max(len_a, len_b)` (character units) | — |
+| 19 | Addr Length Ratio | Same formula | — |
+| 20 | S1 Name Is Missing | Binary: S1 `name_for_bm25`.startswith("nullname") | — |
+| 21 | Cand Name Is Missing | Binary: Candidate `name_for_bm25`.startswith("nullname") | — |
+| 22 | S1 Addr Is Missing | Binary: S1 `addr_for_bm25`.startswith("nulladdr") | — |
+| 23 | Cand Addr Is Missing | Binary: Candidate `addr_for_bm25`.startswith("nulladdr") | — |
+| Meta 24 | **Cross-Script Target?** | `is_cross_script` binary flag from Phase 0 Preprocessing | — |
+| Meta 25 | Source Origin | One-hot: S2=0, S3=1 | — |
+| Meta 26 | Country Target Encoded | `sklearn.TargetEncoder(cv=5)` — fold-internal; global mean fallback for unseen countries (France) | — |
 
 ---
 
@@ -350,9 +452,40 @@ def run_orchestrator(mode, query_c, target_c,
 
 - **Model:** XGBoost (primary) / LightGBM (fallback)
 - **Class Imbalance:** `scale_pos_weight = count(negatives) / count(positives)`
-- **Monotonic Constraints:** All similarity features forced monotonically increasing
+- **Monotonic Constraints:** We use a precise 26-dim constraint vector (`+1` for pure similarity features like Jaro-Winkler, `0` for categorical/ternary features like missing flags or length ratios). This mathematically eliminates overfitting to non-logical training outliers.
 - **Validation:** GroupKFold (k=5) grouped by `source1_entity_id`
 - **Threshold Calibration:** Grid search `[0.5 → 0.99, step=0.01]` on Macro F_0.5
+
+### 10A. Monotonic Constraints Vector (26-Dim)
+
+| Dim | Feature | Constraint | Reasoning |
+|---|---|---|---|
+| 1 | Name Jaro-Winkler | `+1` | Higher = more similar = more likely match |
+| 2 | Name Monge-Elkan (Symmetric Avg) | `+1` | Higher = more similar |
+| 3 | Name Levenshtein Similarity | `+1` | Higher = more similar |
+| 4 | Exact Name Match | `+1` | `1` is strictly better than `0` |
+| 5 | Name Phonetic Match | `+1` | More phonetic overlap = more likely match |
+| 6 | Acronym Score | `+1` | Higher = better acronym alignment |
+| 7 | Name Semantic Cosine | `+1` | Higher cosine = more semantically similar |
+| 8 | Addr Token Jaccard | `+1` | Higher overlap = more likely match |
+| 9 | Addr Token Containment | `+1` | Higher containment = more likely match |
+| 10 | Exact Address Match | `+1` | Binary, `1` is strictly better |
+| 11 | Addr Numeric Jaccard | `+1` | Higher numeric overlap = more likely match |
+| 12 | Addr Numeric Exact (Ternary: 1/0/-1) | `0` | **Not monotone.** `-1` means "no numbers in either" — a neutral/unknown signal, not a negative one. XGBoost needs freedom to learn split rules here |
+| 13 | Addr Numeric Exists Both | `0` | **Not monotone.** Both having numbers doesn't mean they match. It's a quality-of-evidence flag, not a similarity measure |
+| 14 | Name BM25 Score (Self-Normalized) | `+1` | Higher score = stronger lexical name match |
+| 15 | Addr BM25 Score (Self-Normalized) | `+1` | Higher score = stronger lexical address match |
+| 16 | RRF Score (3-stream) | `+1` | Higher RRF = retrieved higher across more streams = more likely match |
+| 17 | Stream Overlap Count (0/1/2/3) | `+1` | Found in more streams = more robust candidate |
+| 18 | Name Length Ratio | `0` | **Not monotone.** Very short names with ratio ≈ 1.0 could be generic (e.g., `"Co"` vs `"Co"`). XGBoost should learn the sweet spot freely |
+| 19 | Addr Length Ratio | `0` | Same reasoning as Dim 18 |
+| 20 | S1 Name Is Missing | `0` | **Not monotone.** A missing S1 name doesn't increase or decrease match probability monotonically — it changes the *nature* of the inference |
+| 21 | Cand Name Is Missing | `0` | Same |
+| 22 | S1 Addr Is Missing | `0` | Same |
+| 23 | Cand Addr Is Missing | `0` | Same |
+| 24 | Cross-Script Target | `0` | **Not monotone.** Cross-script = lower expected BM25 scores (a signal for *interpretation*, not magnitude) |
+| 25 | Source Origin (S2=0, S3=1) | `0` | **Not monotone.** Source identity has no inherent match-probability direction |
+| 26 | Country Target Encoded | `0` | **Not monotone.** Mean-encoded country value is a learned embedding, not a similarity score |
 
 > [!WARNING]
 > **1:1 Bipartite Greedy Post-Processing has been REMOVED.** The problem statement allows S1 → many S2/S3 matches and does not constrain S2/S3 exclusivity. Applying 1:1 assignment would incorrectly drop valid true matches.

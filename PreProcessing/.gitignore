@@ -1,0 +1,14 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Data directories (Parquet artifacts >100MB exceed GitHub file size limits)
+data/
+
+# Environment and local configs
+.env
+.venv/
+env/
+venv/
+.DS_Store

@@ -2,13 +2,28 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
 
-# Data directories (Parquet artifacts >100MB exceed GitHub file size limits)
-data/
+# CPython / Pytest caches
+.pytest_cache/
+.coverage
+htmlcov/
 
-# Environment and local configs
-.env
+# Virtual Environments
 .venv/
-env/
 venv/
+ENV/
+env/
+
+# Large datasets exceeding GitHub 100MB file limit
+PreProcessing/data/processed/
+Resource/dataset/test/
+Resource/dataset/train/
+
+# Local Environment files
+/.env
+Classification/.env
+
+# OS artifacts
 .DS_Store
+Thumbs.db

@@ -1,0 +1,12 @@
+[2026-09-27 19:26:17] [INFO] ======================================================================
+[2026-09-27 19:26:17] [INFO] PHASE 4: ML CLASSIFICATION TRAINING PIPELINE
+[2026-09-27 19:26:17] [INFO] ======================================================================
+[2026-09-27 19:26:17] [INFO] Log file: logs/phase4_train_20260927_192617.log
+[2026-09-27 19:26:17] [INFO] Configuration snapshot: {'CV_FOLDS': 5, 'THRESHOLD_SEARCH_START': 0.5, 'THRESHOLD_SEARCH_END': 0.99, 'THRESHOLD_SEARCH_STEP': 0.01, 'FBETA_SCORE_BETA': 0.5, 'OPTUNA_N_TRIALS': 100, 'OPTUNA_TIMEOUT_SECONDS': 3600.0, 'OPTUNA_SEED': 42, 'EARLY_STOPPING_ROUNDS': 50, 'XGB_MAX_N_ESTIMATORS': 5000, 'XGB_TREE_METHOD': 'hist', 'XGB_DEVICE': 'cpu', 'TARGET_ENCODER_CV': 5, 'XGB_NEGATIVE_SUBSAMPLE_RATIO': 1.0, 'XGB_SCALE_POS_WEIGHT': -1.0, 'MODEL_FAMILY': 'xgboost', 'MODEL_OUTPUT_PATH': '/tmp/pytest-of-mivikev/pytest-8/test_negative_subsampling_beha0/subsample_model.pkl', 'OUTPUT_DIR': 'output/', 'LOGS_DIR': 'logs/', 'METRICS_DIR': 'metrics/phase4/', 'ACTUAL_N_TRIALS': 2, 'ACTUAL_CV_FOLDS': 2, 'ACTUAL_TIMEOUT': 3600.0, 'ACTUAL_FBETA': 0.5}
+[2026-09-27 19:26:17] [INFO] Applied negative subsampling (ratio=0.5000): retained 59 positives, subsampled negatives from 723 to 362 (total 421 rows)
+[2026-09-27 19:26:17] [INFO] Dataset loaded: 421 rows, 26 features, 30 unique S1 entities
+[2026-09-27 19:26:17] [INFO] Class balance: Positive=59, Negative=362, Effective scale_pos_weight=6.1356
+[2026-09-27 19:26:17] [INFO] ----------------------------------------------------------------------
+[2026-09-27 19:26:17] [INFO] PHASE A: HYPERPARAMETER OPTIMIZATION (Optuna)
+[2026-09-27 19:26:17] [INFO] Number of trials: 2, Timeout: 3600.0, CV Folds: 2
+[2026-09-27 19:26:18] [INFO] Trial 0 complete | Mean F_0.5: 0.9868 | Duration: 0.92s
